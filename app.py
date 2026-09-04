@@ -110,6 +110,20 @@ def handle_cloudflare(page):
     log("❌ 验证超时。")
     return False
 
+# 新增：处理欧洲节点出现的 GDPR 隐私同意弹窗
+def handle_consent(page):
+    try:
+        # 查找带有 'Consent' 文本的按钮或特定 class 的按钮
+        consent_btn = page.locator('button:has-text("Consent"), .fc-cta-consent')
+        if consent_btn.count() > 0 and consent_btn.first.is_visible(timeout=2000):
+            log("⚠️ 检测到隐私同意 (Consent) 弹窗，执行点击...")
+            consent_btn.first.click(force=True)
+            time.sleep(2)
+            log("✅ 隐私同意弹窗已关闭")
+    except Exception as e:
+        # 非致命错误，不中断流程
+        pass
+
 def login(page):
     # 1. Cookie 登录尝试
     if COOKIE_VALUE:
@@ -127,6 +141,7 @@ def login(page):
             }])
             page.goto(f"{BASE_URL}/dashboard", wait_until="domcontentloaded", timeout=60000)
             handle_cloudflare(page)
+            handle_consent(page)
             page_title = page.title()
             log(f"📝 当前Title: {page_title}")
             if "auth/login" not in page.url:
@@ -143,6 +158,7 @@ def login(page):
     try:
         page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=60000)
         handle_cloudflare(page)
+        handle_consent(page)
         page.fill('input[name="email"]', EMAIL)
         page.fill('input[name="password"]', PASSWORD)
         time.sleep(0.5)
@@ -153,6 +169,7 @@ def login(page):
         page.wait_for_url(f"{BASE_URL}/*", timeout=30000)
         page.goto(f"{BASE_URL}/dashboard", wait_until="domcontentloaded", timeout=60000)
         handle_cloudflare(page)
+        handle_consent(page)
         page_title = page.title()
         log(f"📝 当前Title: {page_title}")
         if "auth/login" in page.url:
@@ -220,6 +237,9 @@ def renew_service(page):
         if page.url != SERVICE_URL:
             page.goto(SERVICE_URL, wait_until="domcontentloaded", timeout=60000)
         handle_cloudflare(page)
+        
+        # 在点击 Renew 之前，优先清理可能存在的 Consent 弹窗
+        handle_consent(page)
 
         log("🖱️ 准备点击 'Renew' 按钮...")
         renew_btn = page.locator('button:has-text("Renew")')
@@ -231,7 +251,6 @@ def renew_service(page):
                 renew_btn.wait_for(state="visible", timeout=10000)
                 renew_btn.scroll_into_view_if_needed()
                 log(f"🖱️ 第 {i+1} 次尝试点击 'Renew'...")
-                # 增加 force=True 强制点击，忽略前端悬浮层遮挡
                 renew_btn.click(force=True)
 
                 # 等待一小段时间，检测是否出现“未到续期时间”弹窗
@@ -250,6 +269,8 @@ def renew_service(page):
                     break
                 except:
                     log("⚠️ 弹窗未出现，可能是点击未响应，准备重试...")
+                    # 如果弹窗仍未出现，尝试再次清理 Consent 弹窗
+                    handle_consent(page)
                     time.sleep(2)
             except Exception as e:
                 log(f"❌ 点击尝试出错: {e}")
